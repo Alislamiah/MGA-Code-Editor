@@ -230,7 +230,7 @@ main{max-width:1100px;margin:auto;padding:28px 18px 70px}
 
   <div id="accountContent" class="hidden">
    <div class="accounts-list" id="accountsListContainer">
-    <!-- ستظهر الحسابات هنا ديناميكياً (حساب أو عدة حسابات) -->
+    <!-- الحسابات المتاحة -->
    </div>
    <button class="btn secondary full" id="addAnotherAccountBtn">Sign in with another account</button>
   </div>
@@ -348,7 +348,6 @@ import {
  signOut
 } from "https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js";
 
-/* FIREBASE CONFIG */
 const firebaseConfig = {
  apiKey: "AIzaSyBrv1ky0Br5nLb68uvdXE3o6QdzTKpIU4g",
  authDomain: "alislamiah-ai-34202.firebaseapp.com",
@@ -393,10 +392,8 @@ function makeId(){
  return "mga_" + Date.now() + "_" + Math.random().toString(36).slice(2,8);
 }
 
-/* AUTH SESSION MANAGEMENT */
 await setPersistence(auth, browserLocalPersistence);
 
-// إدارة حفظ الحسابات النشطة محلياً لدعم اختيار عدة حسابات (Multi-Account Switcher)
 function getSavedAccounts(){
  try{ return JSON.parse(localStorage.getItem("alislamiah_saved_accounts") || "[]"); }
  catch(e){ return []; }
@@ -438,7 +435,6 @@ onAuthStateChanged(auth, user => {
   return;
  }
 
- // إذا وُجد حساب واحد أو عدة حسابات، اعرض قائمة الاختيار (Continue with this account)
  $("accountScreen").classList.remove("hidden");
  $("appScreen").classList.add("hidden");
  $("accountContent").classList.remove("hidden");
@@ -459,7 +455,6 @@ onAuthStateChanged(auth, user => {
    </div>
   `;
   btn.onclick = () => {
-   // تعيين المستخدم المختار والدخول للوحة التحكم
    currentUser = { uid: acc.uid, email: acc.email, displayName: acc.name };
    $("accountScreen").classList.add("hidden");
    $("appScreen").classList.remove("hidden");
@@ -490,7 +485,6 @@ $("signOutBtn").onclick = async () => {
  location.reload();
 };
 
-/* EDITORS */
 function initializeEditors(){
  if(Object.keys(editors).length) return;
 
@@ -565,7 +559,6 @@ document.querySelectorAll(".tab").forEach(tab=>{
  tab.onclick=()=>switchTab(tab.dataset.file);
 });
 
-/* CREATE PROJECT */
 $("startWritingBtn").onclick=()=>{
  $("newProjectName").value="";
  $("modalBackdrop").classList.remove("hidden");
@@ -589,7 +582,6 @@ $("createProjectBtn").onclick=()=>{
  openEditor(project);
 };
 
-/* COMMIT */
 $("commitBtn").onclick=()=>{
  if(!currentProject)return;
 
@@ -609,7 +601,6 @@ $("commitBtn").onclick=()=>{
  setTimeout(()=>$("saveStatus").style.color="",1600);
 };
 
-/* PROJECT LIST */
 function renderProjects(){
  const projects=loadProjects();
  $("projectCount").textContent=projects.length+" projects";
@@ -627,17 +618,19 @@ function renderProjects(){
   const card=document.createElement("div");
   card.className="project-card";
   card.innerHTML=`
-<div class="project-icon">〈/〉</div>
-<h3></h3>
-<p></p>
-`;
-card.querySelector("h3").textContent=project.name;
-card.querySelector("p").textContent="Last edited: "+new Date(project.updatedAt||project.createdAt).toLocaleString();
-card.onclick=()=>openEditor(project);
-let pressTimer;
-let longPressed=false;
-card.addEventListener("pointerdown",()=>{
-longPressed=false;
+   <div class="project-icon">〈/〉</div>
+   <h3></h3>
+   <p></p>
+  `;
+  card.querySelector("h3").textContent=project.name;
+  card.querySelector("p").textContent="Last edited: "+new Date(project.updatedAt||project.createdAt).toLocaleString();
+  card.onclick=()=>openEditor(project);
+
+  let pressTimer;
+  let longPressed=false;
+
+  card.addEventListener("pointerdown",()=>{
+   longPressed=false;
 pressTimer=setTimeout(()=>{
 longPressed=true;
 showContextMenu(project,card);
@@ -653,7 +646,6 @@ openEditor(project);
 container.appendChild(card);
 });
 }
-/* LONG PRESS MENU */
 function showContextMenu(project,element){
 selectedProjectId=project.id;
 const menu=$("contextMenu");
@@ -695,7 +687,6 @@ renderProjects();
 }
 }
 });
-/* SHARE & DOWNLOAD */
 async function shareProject(project){
 const source=buildHTML(project.code);
 try{
@@ -734,7 +725,6 @@ a.download=(project.name||"MGA-project").replace(/[^\w-]+/g,"_")+".html";
 a.click();
 URL.revokeObjectURL(url);
 }
-/* ERROR MARKERS & DIAGNOSTICS */
 function clearAllMarks(){
 Object.values(editors).forEach(editor=>{
 for(let i=0;i<editor.lineCount();i++){
@@ -821,15 +811,6 @@ editors[error.file].focus();
 };
 box.appendChild(item);
 });
-}
-function repairJavaScript(source){
-return {code:source,changed:false,notes:["No safe automatic JS correction found."]};
-}
-function repairCSS(source){
-return {code:source,changed:false,notes:["No safe automatic CSS correction found."]};
-}
-function repairHTML(source){
-return {code:source,changed:false,notes:["HTML left unchanged."]};
 }
 function correctErrors(){
 if(!currentProject)return;
