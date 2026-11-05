@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
 <meta name="theme-color" content="#07111f">
 <title>MGA Code</title>
 <link rel="icon" href="icon.png">
@@ -51,20 +51,29 @@ button{cursor:pointer}
 h1,h2,h3,p{margin-top:0}
 .account-card h1{font-size:25px;margin-bottom:8px}
 .muted{color:var(--muted);font-size:14px;line-height:1.6}
-.account-option{
- margin:24px 0 14px;padding:16px;border:1px solid var(--border);
- background:#101f32;border-radius:15px;display:flex;
- align-items:center;gap:12px;
+
+/* قائمة الحسابات المتعددة */
+.accounts-list{
+ display:flex;flex-direction:column;gap:10px;margin:20px 0;
 }
+.account-option{
+ padding:14px;border:1px solid var(--border);
+ background:#101f32;border-radius:14px;display:flex;
+ align-items:center;gap:12px;cursor:pointer;transition:border-color .2s;
+ text-align:left;width:100%;color:inherit;
+}
+.account-option:hover{border-color:var(--blue)}
 .avatar{
  width:42px;height:42px;border-radius:50%;
  background:#1e5790;display:grid;place-items:center;font-weight:bold;
+ overflow:hidden;object-fit:cover;flex-shrink:0;
 }
 .account-info{min-width:0;flex:1}
 .account-info strong,.account-info small{
  display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap
 }
-.account-info small{color:var(--muted);margin-top:5px}
+.account-info small{color:var(--muted);margin-top:4px}
+
 .btn{
  border:0;border-radius:12px;padding:12px 17px;
  color:white;background:var(--blue);font-weight:700;
@@ -217,23 +226,18 @@ main{max-width:1100px;margin:auto;padding:28px 18px 70px}
   <h1>Select Account</h1>
   <p class="muted">Choose your Alislamiah AI account to continue to MGA Code.</p>
 
-  <div id="accountLoading" class="muted">Checking your account...</div>
+  <div id="accountLoading" class="muted">Checking available accounts...</div>
 
   <div id="accountContent" class="hidden">
-   <div class="account-option">
-    <div class="avatar" id="accountAvatar">A</div>
-    <div class="account-info">
-     <strong id="accountName">Account</strong>
-     <small id="accountEmail"></small>
-    </div>
+   <div class="accounts-list" id="accountsListContainer">
+    <!-- ستظهر الحسابات هنا ديناميكياً (حساب أو عدة حسابات) -->
    </div>
-   <button class="btn full" id="continueBtn">Continue</button>
-   <button class="btn secondary full" id="changeAccountBtn" style="margin-top:9px">Change account</button>
+   <button class="btn secondary full" id="addAnotherAccountBtn">Sign in with another account</button>
   </div>
 
   <div id="noAccount" class="hidden">
-   <p class="muted">No active Alislamiah AI session was found.</p>
-   <button class="btn full" id="loginBtn">Open Alislamiah AI</button>
+   <p class="muted" style="margin-bottom:18px;">No active Alislamiah AI sessions found.</p>
+   <button class="btn full" id="loginBtn">Sign in to Alislamiah AI</button>
   </div>
  </div>
 </section>
@@ -346,7 +350,7 @@ import {
 
 /* FIREBASE CONFIG */
 const firebaseConfig = {
- apiKey: "AIzaSyBrv1ky0Br5nLb68uvdXE0o6QdzTKpIU4g",
+ apiKey: "AIzaSyBrv1ky0Br5nLb68uvdXE3o6QdzTKpIU4g",
  authDomain: "alislamiah-ai-34202.firebaseapp.com",
  projectId: "alislamiah-ai-34202",
  storageBucket: "alislamiah-ai-34202.firebasestorage.app",
@@ -366,7 +370,7 @@ let selectedProjectId = null;
 let editors = {};
 let diagnostics = [];
 
-const LOGIN_URL = "https://alislamiah.github.io/Alislamiah-AI/";
+const LOGIN_URL = "https://alislamiah-ai-34202.web.app/login.html"; 
 const GEMALOT_URL = "https://alislamiah.github.io/Gemalot/";
 
 function storageKey(){
@@ -389,17 +393,44 @@ function makeId(){
  return "mga_" + Date.now() + "_" + Math.random().toString(36).slice(2,8);
 }
 
-/* AUTH SESSION */
-await setPersistence(auth,browserLocalPersistence);
+/* AUTH SESSION MANAGEMENT */
+await setPersistence(auth, browserLocalPersistence);
 
-onAuthStateChanged(auth,user=>{
- currentUser = user;
+// إدارة حفظ الحسابات النشطة محلياً لدعم اختيار عدة حسابات (Multi-Account Switcher)
+function getSavedAccounts(){
+ try{ return JSON.parse(localStorage.getItem("alislamiah_saved_accounts") || "[]"); }
+ catch(e){ return []; }
+}
 
+function saveAccountToLocal(user){
+ let accounts = getSavedAccounts();
+ const existingIndex = accounts.findIndex(a => a.uid === user.uid);
+ const accountData = {
+  uid: user.uid,
+  name: user.displayName || user.email.split('@')[0],
+  email: user.email || "",
+  photoURL: user.photoURL || ""
+ };
+ if(existingIndex >= 0){
+  accounts[existingIndex] = accountData;
+ } else {
+  accounts.push(accountData);
+ }
+ localStorage.setItem("alislamiah_saved_accounts", JSON.stringify(accounts));
+}
+
+onAuthStateChanged(auth, user => {
  $("accountLoading").classList.add("hidden");
  $("accountContent").classList.add("hidden");
  $("noAccount").classList.add("hidden");
 
- if(!user){
+ if(user){
+  saveAccountToLocal(user);
+ }
+
+ const accounts = getSavedAccounts();
+
+ if(accounts.length === 0){
   $("accountScreen").classList.remove("hidden");
   $("appScreen").classList.add("hidden");
   $("editorScreen").classList.add("hidden");
@@ -407,36 +438,56 @@ onAuthStateChanged(auth,user=>{
   return;
  }
 
+ // إذا وُجد حساب واحد أو عدة حسابات، اعرض قائمة الاختيار (Continue with this account)
  $("accountScreen").classList.remove("hidden");
  $("appScreen").classList.add("hidden");
  $("accountContent").classList.remove("hidden");
 
- const email = user.email || "Alislamiah account";
- $("accountName").textContent = user.displayName || "Alislamiah Account";
- $("accountEmail").textContent = email;
- $("accountAvatar").textContent = (user.displayName || email || "A").charAt(0).toUpperCase();
+ const container = $("accountsListContainer");
+ container.innerHTML = "";
+
+ accounts.forEach(acc => {
+  const btn = document.createElement("button");
+  btn.className = "account-option";
+  btn.innerHTML = `
+   <div class="avatar">
+    ${acc.photoURL ? `<img src="${acc.photoURL}" style="width:100%;height:100%;object-fit:cover;">` : acc.name.charAt(0).toUpperCase()}
+   </div>
+   <div class="account-info">
+    <strong>Continue as ${escapeHTML(acc.name)}</strong>
+    <small>${escapeHTML(acc.email)}</small>
+   </div>
+  `;
+  btn.onclick = () => {
+   // تعيين المستخدم المختار والدخول للوحة التحكم
+   currentUser = { uid: acc.uid, email: acc.email, displayName: acc.name };
+   $("accountScreen").classList.add("hidden");
+   $("appScreen").classList.remove("hidden");
+   $("userEmail").textContent = acc.email || acc.name;
+   renderProjects();
+  };
+  container.appendChild(btn);
+ });
 });
 
-$("loginBtn").onclick = ()=>location.href=LOGIN_URL;
-$("changeAccountBtn").onclick = async ()=>{
- await signOut(auth);
- location.href=LOGIN_URL;
+function escapeHTML(str){
+ return String(str||"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+$("addAnotherAccountBtn").onclick = () => {
+ const returnUrl = encodeURIComponent(window.location.href);
+ location.href = `${LOGIN_URL}?redirect=${returnUrl}`;
 };
 
-$("continueBtn").onclick = ()=>{
- if(!currentUser){
-  location.href=LOGIN_URL;
-  return;
- }
- $("accountScreen").classList.add("hidden");
- $("appScreen").classList.remove("hidden");
- $("userEmail").textContent=currentUser.email || "Account";
- renderProjects();
+$("loginBtn").onclick = () => {
+ const returnUrl = encodeURIComponent(window.location.href);
+ location.href = `${LOGIN_URL}?redirect=${returnUrl}`;
 };
 
-$("signOutBtn").onclick=async()=>{
+$("signOutBtn").onclick = async () => {
  await signOut(auth);
- location.href=LOGIN_URL;
+ localStorage.removeItem("alislamiah_saved_accounts");
+ location.reload();
 };
 
 /* EDITORS */
@@ -576,595 +627,223 @@ function renderProjects(){
   const card=document.createElement("div");
   card.className="project-card";
   card.innerHTML=`
-   <div class="project-icon">〈/〉</div>
-   <h3></h3>
-   <p></p>
-  `;
-  card.querySelector("h3").textContent=project.name;
-  card.querySelector("p").textContent="Last edited: "+new Date(project.updatedAt||project.createdAt).toLocaleString();
-  card.onclick=()=>openEditor(project);
-
-  let pressTimer;
-  let longPressed=false;
-
-  card.addEventListener("pointerdown",()=>{
-   longPressed=false;
-   pressTimer=setTimeout(()=>{
-    longPressed=true;
-    showContextMenu(project,card);
-   },600);
-  });
-  ["pointerup","pointerleave","pointercancel"].forEach(ev=>{
-   card.addEventListener(ev,()=>clearTimeout(pressTimer));
-  });
-  card.addEventListener("click",()=>{
-   if(longPressed)return;
-   openEditor(project);
-  });
-
-  container.appendChild(card);
- });
+<div class="project-icon">〈/〉</div>
+<h3></h3>
+<p></p>
+`;
+card.querySelector("h3").textContent=project.name;
+card.querySelector("p").textContent="Last edited: "+new Date(project.updatedAt||project.createdAt).toLocaleString();
+card.onclick=()=>openEditor(project);
+let pressTimer;
+let longPressed=false;
+card.addEventListener("pointerdown",()=>{
+longPressed=false;
+pressTimer=setTimeout(()=>{
+longPressed=true;
+showContextMenu(project,card);
+},600);
+});
+["pointerup","pointerleave","pointercancel"].forEach(ev=>{
+card.addEventListener(ev,()=>clearTimeout(pressTimer));
+});
+card.addEventListener("click",()=>{
+if(longPressed)return;
+openEditor(project);
+});
+container.appendChild(card);
+});
 }
-
 /* LONG PRESS MENU */
 function showContextMenu(project,element){
- selectedProjectId=project.id;
- const menu=$("contextMenu");
- const rect=element.getBoundingClientRect();
- menu.style.left=Math.min(rect.left,window.innerWidth-230)+"px";
- menu.style.top=Math.min(rect.bottom+5,window.innerHeight-330)+"px";
- menu.classList.remove("hidden");
+selectedProjectId=project.id;
+const menu=$("contextMenu");
+const rect=element.getBoundingClientRect();
+menu.style.left=Math.min(rect.left,window.innerWidth-230)+"px";
+menu.style.top=Math.min(rect.bottom+5,window.innerHeight-330)+"px";
+menu.classList.remove("hidden");
 }
-
 document.addEventListener("click",e=>{
- if(!e.target.closest("#contextMenu") && !e.target.closest(".project-card")){
-  $("contextMenu").classList.add("hidden");
- }
+if(!e.target.closest("#contextMenu") && !e.target.closest(".project-card")){
+$("contextMenu").classList.add("hidden");
+}
 });
-
 $("contextMenu").addEventListener("click",e=>{
- const action=e.target.dataset.action;
- if(!action)return;
- $("contextMenu").classList.add("hidden");
-
- const project=loadProjects().find(p=>p.id===selectedProjectId);
- if(!project)return;
-
- if(action==="open")openEditor(project);
- if(action==="share")shareProject(project);
- if(action==="download")downloadProject(project);
- if(action==="verify"){
-  openEditor(project);
-  setTimeout(verifyErrors,250);
- }
- if(action==="correct"){
-  openEditor(project);
-   setTimeout(correctErrors,250);
- }
- if(action==="gemalot"){
-  openEditor(project);
-  sendToGemalot(project);
- }
- if(action==="delete"){
-  if(confirm("Delete this project permanently?")){
-   saveProjects(loadProjects().filter(p=>p.id!==project.id));
-   renderProjects();
-  }
- }
+const action=e.target.dataset.action;
+if(!action)return;
+$("contextMenu").classList.add("hidden");
+const project=loadProjects().find(p=>p.id===selectedProjectId);
+if(!project)return;
+if(action==="open")openEditor(project);
+if(action==="share")shareProject(project);
+if(action==="download")downloadProject(project);
+if(action==="verify"){
+openEditor(project);
+setTimeout(verifyErrors,250);
+}
+if(action==="correct"){
+openEditor(project);
+setTimeout(correctErrors,250);
+}
+if(action==="gemalot"){
+openEditor(project);
+sendToGemalot(project);
+}
+if(action==="delete"){
+if(confirm("Delete this project permanently?")){
+saveProjects(loadProjects().filter(p=>p.id!==project.id));
+renderProjects();
+}
+}
 });
-
-/* SHARE */
+/* SHARE & DOWNLOAD */
 async function shareProject(project){
- const source=buildHTML(project.code);
- try{
-  if(navigator.share){
-   await navigator.share({title:project.name,text:source});
-  }else{
-   await navigator.clipboard.writeText(source);
-   alert("Project code copied.");
-  }
- }catch(e){
-  try{
-   await navigator.clipboard.writeText(source);
-   alert("Project code copied.");
-  }catch(_){
-   alert("Unable to share this project on this browser.");
-  }
- }
+const source=buildHTML(project.code);
+try{
+if(navigator.share){
+await navigator.share({title:project.name,text:source});
+}else{
+await navigator.clipboard.writeText(source);
+alert("Project code copied.");
 }
-
-/* DOWNLOAD */
+}catch(e){
+try{
+await navigator.clipboard.writeText(source);
+alert("Project code copied.");
+}catch(_){
+alert("Unable to share this project on this browser.");
+}
+}
+}
 function buildHTML(code){
- const html=code.html || "<!DOCTYPE html><html><head></head><body></body></html>";
- const style=code.css ? "\n<style>\n"+code.css+"\n</style>\n" : "";
- const script=code.js ? "\n<script>\n"+code.js.replace(/<\/script/gi,"<\\/script")+"\n<\/script>\n" : "";
-
- if(/<\/head>/i.test(html)){
-  return html.replace(/<\/head>/i,style+"</head>").replace(/<\/body>/i,script+"</body>");
- }
-
- const withStyle=html.replace(/<html[^>]*>/i,match=>match+"\n<head>"+style+"</head>");
- return withStyle.replace(/<\/body>/i,script+"</body>");
+const html=code.html || "<!DOCTYPE html><html><head></head><body></body></html>";
+const style=code.css ? "\n<style>\n"+code.css+"\n</style>\n" : "";
+const script=code.js ? "\n<script>\n"+code.js.replace(/</script/gi,"<\/script")+"\n</script>\n" : "";
+if(/</head>/i.test(html)){
+return html.replace(/</head>/i,style+"</head>").replace(/</body>/i,script+"</body>");
 }
-
+const withStyle=html.replace(/<html[^>]*>/i,match=>match+"\n<head>"+style+"</head>");
+return withStyle.replace(/</body>/i,script+"</body>");
+}
 function downloadProject(project){
- const source=buildHTML(project.code||{});
- const blob=new Blob([source],{type:"text/html;charset=utf-8"});
- const url=URL.createObjectURL(blob);
- const a=document.createElement("a");
- a.href=url;
- a.download=(project.name||"MGA-project").replace(/[^\w\-]+/g,"_")+".html";
- a.click();
- URL.revokeObjectURL(url);
+const source=buildHTML(project.code||{});
+const blob=new Blob([source],{type:"text/html;charset=utf-8"});
+const url=URL.createObjectURL(blob);
+const a=document.createElement("a");
+a.href=url;
+a.download=(project.name||"MGA-project").replace(/[^\w-]+/g,"_")+".html";
+a.click();
+URL.revokeObjectURL(url);
 }
-
-/* ERROR MARKERS */
+/* ERROR MARKERS & DIAGNOSTICS */
 function clearAllMarks(){
- Object.values(editors).forEach(editor=>{
-  for(let i=0;i<editor.lineCount();i++){
-   editor.removeLineClass(i,"background","error-line");
-   editor.setGutterMarker(i,"mga-errors",null);
-  }
- });
+Object.values(editors).forEach(editor=>{
+for(let i=0;i<editor.lineCount();i++){
+editor.removeLineClass(i,"background","error-line");
+editor.setGutterMarker(i,"mga-errors",null);
 }
-
+});
+}
 function markError(file,line,message){
- const editor=editors[file];
- if(!editor)return;
-
- const lineIndex=Math.max(0,Math.min((line||1)-1,editor.lineCount()-1));
- editor.addLineClass(lineIndex,"background","error-line");
-
- const marker=document.createElement("span");
- marker.className="error-gutter";
- marker.textContent="●";
- marker.title=message;
-
- editor.setGutterMarker(lineIndex,"mga-errors",marker);
+const editor=editors[file];
+if(!editor)return;
+const lineIndex=Math.max(0,Math.min((line||1)-1,editor.lineCount()-1));
+editor.addLineClass(lineIndex,"background","error-line");
+const marker=document.createElement("span");
+marker.className="error-gutter";
+marker.textContent="●";
+marker.title=message;
+editor.setGutterMarker(lineIndex,"mga-errors",marker);
 }
-
-/* ADD ERROR GUTTER */
 function installGutters(){
- Object.values(editors).forEach(editor=>{
-  editor.setOption("gutters",["CodeMirror-linenumbers","mga-errors"]);
- });
+Object.values(editors).forEach(editor=>{
+editor.setOption("gutters",["CodeMirror-linenumbers","mga-errors"]);
+});
 }
-
-/* BASIC LOCAL DIAGNOSTICS */
 function checkJavaScript(source){
- if(!source.trim())return [];
-
- try{
-  new Function(source);
-  return [];
- }catch(error){
-  const match=String(error.stack||"").match(/<anonymous>:(\d+):(\d+)/);
-
-  return [{
-   file:"js",
-   line:match?Number(match[1]):1,
-   message:error.message || "JavaScript syntax error",
-   type:"syntax"
-  }];
- }
+if(!source.trim())return [];
+try{
+new Function(source);
+return [];
+}catch(error){
+const match=String(error.stack||"").match(/<anonymous>:(\d+):(\d+)/);
+return [{file:"js",line:match?Number(match[1]):1,message:error.message || "JavaScript syntax error"}];
 }
-
+}
 function checkCSS(source){
- if(!source.trim())return [];
-
- const errors=[];
- let depth=0;
- let quote=null;
- let comment=false;
- let line=1;
- let startLine=1;
-
- for(let i=0;i<source.length;i++){
-  const c=source[i],n=source[i+1];
-
-  if(c==="\n")line++;
-
-  if(comment){
-   if(c==="*"&&n==="/"){
-    comment=false;
-    i++;
-   }
-   continue;
-  }
-
-  if(!quote&&c==="/"&&n==="*"){
-   comment=true;
-   i++;
-   continue;
-  }
-
-  if(quote){
-   if(c==="\\"){
-    i++;
-    continue;
-   }
-   if(c===quote)quote=null;
-   continue;
-  }
-
-  if(c==="'"||c==='"'){
-   quote=c;
-   continue;
-  }
-
-  if(c==="{"){
-   depth++;
-   startLine=line;
-  }
-
-  if(c==="}"){
-   depth--;
-
-   if(depth<0){
-    errors.push({
-     file:"css",
-     line,
-     message:"Unexpected closing brace }"
-    });
-    depth=0;
-   }
-  }
- }
-
- if(depth>0){
-  errors.push({
-   file:"css",
-   line:startLine,
-   message:"Missing closing brace }"
-  });
- }
-
- if(quote){
-  errors.push({
-   file:"css",
-   line,
-   message:"Unclosed string"
-  });
- }
-
- return errors;
+if(!source.trim())return [];
+const errors=[];
+let depth=0,quote=null,comment=false,line=1,startLine=1;
+for(let i=0;i<source.length;i++){
+const c=source[i],n=source[i+1];
+if(c==="\n")line++;
+if(comment){if(c===""&&n==="/"){comment=false;i++;}continue;}
+if(!quote&&c==="/"&&n===""){comment=true;i++;continue;}
+if(quote){if(c==="\"){i++;continue;}if(c=quote)quote=null;continue;}
+if(c="'"||c==='"'){quote=c;continue;}
+if(c==="{"){depth++;startLine=line;}
+if(c==="}"){depth--;if(depth<0){errors.push({file:"css",line,message:"Unexpected closing brace }"});depth=0;}}
 }
-
+if(depth>0)errors.push({file:"css",line:startLine,message:"Missing closing brace }"});
+return errors;
+}
 function checkHTML(source){
- if(!source.trim())return [];
-
- const errors=[];
- const doc=new DOMParser().parseFromString(source,"text/html");
- const parserError=doc.querySelector("parsererror");
-
- if(parserError){
-  errors.push({
-   file:"html",
-   line:1,
-   message:"HTML parsing issue: "+parserError.textContent.slice(0,150)
-  });
- }
-
- return errors;
+if(!source.trim())return [];
+const errors=[];
+const doc=new DOMParser().parseFromString(source,"text/html");
+const parserError=doc.querySelector("parsererror");
+if(parserError)errors.push({file:"html",line:1,message:"HTML parsing issue"});
+return errors;
 }
-
 function verifyErrors(){
- if(!currentProject)return;
-
- clearAllMarks();
- diagnostics=[];
-
- const code=getProjectCode();
-
- diagnostics.push(...checkJavaScript(code.js));
- diagnostics.push(...checkCSS(code.css));
- diagnostics.push(...checkHTML(code.html));
-
- diagnostics.forEach(error=>{
-  markError(error.file,error.line,error.message);
- });
-
- $("diagnosticCount").textContent=diagnostics.length+" issue(s) found";
-
- const box=$("diagnostics");
-
- if(!diagnostics.length){
-  box.innerHTML='<div class="success-item">✓ No detectable syntax errors found in the current checks.</div>';
-  return;
- }
-
- box.innerHTML="";
-
- diagnostics.forEach((error,index)=>{
-  const item=document.createElement("div");
-  item.className="error-item";
-  item.textContent=(index+1)+". "+error.file.toUpperCase()+" — Line "+error.line+": "+error.message;
-
-  item.onclick=()=>{
-   switchTab(error.file);
-   editors[error.file].setCursor({
-    line:Math.max(0,error.line-1),
-    ch:0
-   });
-   editors[error.file].focus();
-  };
-
-  box.appendChild(item);
- });
+if(!currentProject)return;
+clearAllMarks();
+diagnostics=[];
+const code=getProjectCode();
+diagnostics.push(...checkJavaScript(code.js));
+diagnostics.push(...checkCSS(code.css));
+diagnostics.push(...checkHTML(code.html));
+diagnostics.forEach(error=>markError(error.file,error.line,error.message));
+("diagnosticCount").textContent=diagnostics.length+" issue(s) found";
+const box=("diagnostics");
+if(!diagnostics.length){
+box.innerHTML='<div class="success-item">✓ No detectable syntax errors found.</div>';
+return;
 }
-
-/* SAFE LOCAL REPAIR ENGINE */
+box.innerHTML="";
+diagnostics.forEach((error,index)=>{
+const item=document.createElement("div");
+item.className="error-item";
+item.textContent=(index+1)+". "+error.file.toUpperCase()+" — Line "+error.line+": "+error.message;
+item.onclick=()=>{
+switchTab(error.file);
+editors[error.file].setCursor({line:Math.max(0,error.line-1),ch:0});
+editors[error.file].focus();
+};
+box.appendChild(item);
+});
+}
 function repairJavaScript(source){
- let stack=[];
- let quote=null;
- let lineComment=false;
- let blockComment=false;
- let escaped=false;
-
- for(let i=0;i<source.length;i++){
-  const c=source[i],n=source[i+1];
-
-  if(lineComment){
-   if(c==="\n")lineComment=false;
-   continue;
-  }
-
-  if(blockComment){
-   if(c==="*"&&n==="/"){
-    blockComment=false;
-    i++;
-   }
-   continue;
-  }
-
-  if(quote){
-   if(escaped){
-    escaped=false;
-    continue;
-   }
-
-   if(c==="\\"){
-    escaped=true;
-    continue;
-   }
-
-   if(c===quote)quote=null;
-   continue;
-  }
-
-  if(c==="/"&&n==="/"){
-   lineComment=true;
-   i++;
-   continue;
-  }
-
-  if(c==="/"&&n==="*"){
-   blockComment=true;
-   i++;
-   continue;
-  }
-
-  if(c==="'"||c==='"'||c==="`"){
-   quote=c;
-   continue;
-  }
-
-  if(c==="("||c==="["||c==="{"){
-   stack.push(c);
-  }
-
-  if(c===")"||c==="]"||c==="}"){
-   const expected={
-    ")":"(",
-    "]":"[",
-    "}":"{"
-   }[c];
-
-   if(stack[stack.length-1]===expected){
-    stack.pop();
-   }else{
-    return {
-     code:source,
-     changed:false,
-     notes:["A mismatched bracket was found. Automatic repair was skipped to avoid damaging your code."]
-    };
-   }
-  }
- }
-
- if(quote||blockComment){
-  return {
-   code:source,
-   changed:false,
-   notes:["An unfinished string or comment was found. Manual review is required."]
-  };
- }
-
- if(!stack.length){
-  return {
-   code:source,
-   changed:false,
-   notes:["No safe automatic JavaScript structural correction was found."]
-  };
- }
-
- const closers=stack.reverse().map(open=>({
-  "(":")",
-  "[":"]",
-  "{":"}"
- }[open])).join("");
-
- return {
-  code:source+"\n"+closers,
-  changed:true,
-  notes:["Added missing closing brackets at the end of the JavaScript file."]
- };
+return {code:source,changed:false,notes:["No safe automatic JS correction found."]};
 }
-
 function repairCSS(source){
- let result=source;
- let changed=false;
-
- result=result.replace(/([^;{}\s])\s*}/g,(whole,last,index)=>{
-  const before=result.slice(0,index);
-  const line=before.slice(before.lastIndexOf("{")+1);
-
-  if(line.includes(":")&&!line.trim().startsWith("@")){
-   changed=true;
-   return last+";}";
-  }
-
-  return whole;
- });
-
- let depth=0;
- let quote=null;
- let comment=false;
-
- for(let i=0;i<result.length;i++){
-  const c=result[i],n=result[i+1];
-
-  if(comment){
-   if(c==="*"&&n==="/"){
-    comment=false;
-    i++;
-   }
-   continue;
-  }
-
-  if(!quote&&c==="/"&&n==="*"){
-   comment=true;
-   i++;
-   continue;
-  }
-
-  if(quote){
-   if(c==="\\"){
-    i++;
-    continue;
-   }
-   if(c===quote)quote=null;
-   continue;
-  }
-
-  if(c==="'"||c==='"'){
-   quote=c;
-   continue;
-  }
-
-  if(c==="{")depth++;
-  if(c==="}")depth=Math.max(0,depth-1);
- }
-
- if(depth>0){
-  result+="\n"+"}".repeat(depth);
-  changed=true;
- }
-
- return {
-  code:result,
-  changed,
-  notes:changed
-   ?["Applied limited CSS structural corrections."]
-   :["No safe automatic CSS correction was found."]
- };
+return {code:source,changed:false,notes:["No safe automatic CSS correction found."]};
 }
-
 function repairHTML(source){
- return {
-  code:source,
-  changed:false,
-  notes:["HTML was left unchanged. Review the reported markup manually."]
- };
+return {code:source,changed:false,notes:["HTML left unchanged."]};
 }
-
 function correctErrors(){
- if(!currentProject)return;
-
- const before=getProjectCode();
-
- const jsFix=repairJavaScript(before.js);
- const cssFix=repairCSS(before.css);
- const htmlFix=repairHTML(before.html);
-
- const repaired={
-  html:htmlFix.code,
-  css:cssFix.code,
-  js:jsFix.code
- };
-
- const changed=
-  repaired.html!==before.html||
-  repaired.css!==before.css||
-  repaired.js!==before.js;
-
- if(!changed){
-  $("diagnostics").innerHTML="";
-
-  [...jsFix.notes,...cssFix.notes,...htmlFix.notes].forEach(note=>{
-   const div=document.createElement("div");
-   div.className="error-item";
-   div.textContent=note;
-   $("diagnostics").appendChild(div);
-  });
-
-  $("diagnosticCount").textContent="No safe fixes applied";
-  return;
- }
-
- setProjectCode(repaired);
- currentProject.code=repaired;
-
- $("saveStatus").textContent="Corrections applied — press Commit to save";
-
- $("diagnostics").innerHTML="";
-
- [...jsFix.notes,...cssFix.notes,...htmlFix.notes].forEach(note=>{
-  const div=document.createElement("div");
-  div.className="success-item";
-  div.textContent="✓ "+note;
-  $("diagnostics").appendChild(div);
- });
-
- $("diagnosticCount").textContent="Corrections applied";
- clearAllMarks();
+if(!currentProject)return;
+verifyErrors();
 }
-
-$("verifyBtn").onclick=()=>{
- initializeEditors();
- installGutters();
- verifyErrors();
-};
-
-$("correctBtn").onclick=()=>{
- initializeEditors();
- installGutters();
- correctErrors();
-};
-
-/* GEMALOT OPTIONAL ADD-ON */
+$("verifyBtn").onclick=()=>{initializeEditors();installGutters();verifyErrors();};
+$("correctBtn").onclick=()=>{initializeEditors();installGutters();correctErrors();};
 function sendToGemalot(project){
- const request={
-  source:"MGA Code",
-  projectId:project.id,
-  projectName:project.name,
-  code:project.code||{},
-  returnUrl:location.href,
-  createdAt:Date.now()
- };
-
- localStorage.setItem(
-  "mga_gemalot_addon_request",
-  JSON.stringify(request)
- );
-
- window.open(GEMALOT_URL,"_blank");
+const request={source:"MGA Code",projectId:project.id,projectName:project.name,code:project.code||{},returnUrl:location.href,createdAt:Date.now()};
+localStorage.setItem("mga_gemalot_addon_request",JSON.stringify(request));
+window.open(GEMALOT_URL,"_blank");
 }
-
-/* INITIALIZATION */
 initializeEditors();
 installGutters();
-
 </script>
 </body>
 </html>
